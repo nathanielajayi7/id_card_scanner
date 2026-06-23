@@ -1,0 +1,21 @@
+import 'package:flutter_doc_scanner/flutter_doc_scanner_models.dart';
+
+class ScanDocument {
+  final ImageScanResult rawData;
+  String? detectedType;
+  String? kycImagePath;
+  Map<String, String>? extractedData;
+
+  ScanDocument({required this.rawData, this.detectedType, this.kycImagePath, this.extractedData});
+
+  // Helper to extract the first image path from typical flutter_doc_scanner output
+  String? get firstImagePath{ 
+    final String path = rawData.images.first;
+    final cleanPath = Uri.parse(path).toFilePath();
+    return cleanPath;
+  }
+
+  @override
+  String toString() =>
+      detectedType != null ? '$detectedType: $rawData' : rawData.images.first;
+}
