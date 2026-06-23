@@ -5,6 +5,9 @@ import 'package:id_card_scanner/id_card_scanner.dart';
 import 'package:id_card_scanner/services/face_extraction_service.dart';
 import 'package:id_card_scanner/services/text_extraction_service.dart';
 import 'package:id_card_scanner/models/field_instruction.dart';
+import 'package:id_card_scanner/models/scan_document.dart';
+import 'package:id_card_scanner/views/explore_result_page.dart';
+import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -29,17 +32,19 @@ class HomePage extends StatelessWidget {
       final faceService = FaceExtractionService();
       final textService = TextExtractionService();
 
-      final kycPath = await faceService.extractFace(tempFile.path);
+      final faceResult = await faceService.extractFace(tempFile.path);
+      final kycPath = faceResult?.imagePath;
 
       final mockInstructions =
           instructionSet[DetectedType.nin_slip];
       if (mockInstructions == null) {
         throw Exception("no instruction set for this card type");
       }
-      final extractedData = await textService.extractAttributes(
+      final extractionResult = await textService.extractAttributes(
         tempFile.path,
         mockInstructions,
       );
+      final extractedData = extractionResult.data;
 
       faceService.dispose();
       textService.dispose();
@@ -66,6 +71,26 @@ class HomePage extends StatelessWidget {
               ],
             ),
             actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  final scanDoc = ScanDocument(
+                    rawData: ImageScanResult(images: [Uri.file(tempFile.path).toString()]),
+                    kycImagePath: kycPath,
+                    extractedData: extractedData,
+                    textBoundingBoxes: extractionResult.boundingBoxes,
+                    faceBoundingBox: faceResult?.boundingBox,
+                    faceMeshPoints: faceResult?.meshPoints,
+                  );
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ExploreResultPage(scanResult: scanDoc),
+                    ),
+                  );
+                },
+                child: const Text('Explore Result'),
+              ),
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text('OK'),

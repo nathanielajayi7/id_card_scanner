@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/scan_document.dart';
+import 'explore_result_page.dart';
 
 class ResultPage extends StatelessWidget {
   final ScanDocument scanResult;
@@ -69,11 +70,31 @@ class ResultPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 48),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context); // Go back to Home
-                },
-                child: const Text('Back to Home'),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context); // Go back to Home
+                    },
+                    child: const Text('Back to Home'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ExploreResultPage(scanResult: scanResult),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                    child: const Text('Explore Result'),
+                  ),
+                ],
               ),
             ],
           ),

@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter_doc_scanner/flutter_doc_scanner_models.dart';
 
 class ScanDocument {
@@ -5,8 +6,21 @@ class ScanDocument {
   String? detectedType;
   String? kycImagePath;
   Map<String, String>? extractedData;
+  
+  // New overlay fields
+  Map<String, Rect>? textBoundingBoxes;
+  List<Offset>? faceMeshPoints;
+  Rect? faceBoundingBox;
 
-  ScanDocument({required this.rawData, this.detectedType, this.kycImagePath, this.extractedData});
+  ScanDocument({
+    required this.rawData,
+    this.detectedType,
+    this.kycImagePath,
+    this.extractedData,
+    this.textBoundingBoxes,
+    this.faceMeshPoints,
+    this.faceBoundingBox,
+  });
 
   // Helper to extract the first image path from typical flutter_doc_scanner output
   String? get firstImagePath{ 

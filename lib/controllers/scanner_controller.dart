@@ -27,32 +27,45 @@ class ScannerController extends ChangeNotifier {
     try {
       // getScanDocuments allows us to configure the page limit. We use 2 for front and back.
       ImageScanResult? scannedDocuments = await FlutterDocScanner()
-          .getScannedDocumentAsImages(page: 1);
+          .getScannedDocumentAsImages(
+            page: 1,
+            quality: 1,
+            useAutomaticSinglePictureProcessing: true,
+          );
 
       if (scannedDocuments != null && scannedDocuments.images.isNotEmpty) {
         final doc = ScanDocument(rawData: scannedDocuments);
 
         // Extract features and compare with anchors
-        final imagePath = doc.firstImagePath;
+        var imagePath = doc.firstImagePath;
         if (imagePath != null) {
+          // Slightly enhance image contrast and brightness before processing
+          imagePath = await _faceExtractionService.enhanceImage(imagePath);
+          
           final type = await _embeddingService.classifyDocument(imagePath);
           doc.detectedType = type;
           // Attempt to extract face for KYC
-          final kycImagePath = await _faceExtractionService.extractFace(
+          final faceExtractionResult = await _faceExtractionService.extractFace(
             imagePath,
           );
-          doc.kycImagePath = kycImagePath;
+          if (faceExtractionResult != null) {
+            doc.kycImagePath = faceExtractionResult.imagePath;
+            doc.faceBoundingBox = faceExtractionResult.boundingBox;
+            doc.faceMeshPoints = faceExtractionResult.meshPoints;
+          }
+
           final instructions =
               instructionSet[DetectedType.values.firstWhere(
                 (e) => e.name.toString() == type,
               )];
-          if(instructions == null){
+          if (instructions == null) {
             throw Exception("no instruction set for this card type");
           }
-          doc.extractedData = await _textExtractionService.extractAttributes(
-            imagePath,
-            instructions,
-          );
+
+          final textExtractionResult = await _textExtractionService
+              .extractAttributes(imagePath, instructions);
+          doc.extractedData = textExtractionResult.data;
+          doc.textBoundingBoxes = textExtractionResult.boundingBoxes;
         }
 
         _scanResult = doc;
@@ -65,8 +78,8 @@ class ScannerController extends ChangeNotifier {
     } catch (e, s) {
       _errorMessage = 'Error processing document: $e';
       _scanResult = null;
-      print(e); 
-      print(s); 
+      print(e);
+      print(s);
     } finally {
       _isScanning = false;
       notifyListeners();

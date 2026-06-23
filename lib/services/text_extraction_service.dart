@@ -5,6 +5,13 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:image/image.dart' as img;
 import '../models/field_instruction.dart';
 
+class TextExtractionResult {
+  final Map<String, String> data;
+  final Map<String, Rect> boundingBoxes;
+
+  TextExtractionResult({required this.data, required this.boundingBoxes});
+}
+
 class _DocumentLine {
   final double centerY;
   final List<TextLine> textLines = [];
@@ -18,7 +25,7 @@ class TextExtractionService {
   TextExtractionService()
       : _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
 
-  Future<Map<String, String>> extractAttributes(
+  Future<TextExtractionResult> extractAttributes(
     String imagePath,
     List<FieldInstruction> instructions,
   ) async {
@@ -69,19 +76,25 @@ class TextExtractionService {
     }
 
     Map<String, String> extractedData = {};
+    Map<String, Rect> extractedRects = {};
 
     for (var instruction in instructions) {
-      String? matchedText = _processInstruction(instruction, allLines, documentLines, imgW, imgH);
+      final result = _processInstruction(instruction, allLines, documentLines, imgW, imgH);
+      final matchedText = result?.text;
+      final matchedRect = result?.rect;
 
       if (matchedText != null && matchedText.trim().isNotEmpty) {
         extractedData[instruction.attributeName] = matchedText;
+        if (matchedRect != null) {
+          extractedRects[instruction.attributeName] = matchedRect;
+        }
       }
     }
 
-    return extractedData;
+    return TextExtractionResult(data: extractedData, boundingBoxes: extractedRects);
   }
 
-  String? _processInstruction(
+  _InstructionResult? _processInstruction(
     FieldInstruction instruction,
     List<TextLine> allLines,
     List<_DocumentLine> documentLines,
@@ -89,6 +102,7 @@ class TextExtractionService {
     double imgH,
   ) {
     String? matchedText;
+    Rect? matchedRect;
 
     switch (instruction.strategy) {
       case MatchStrategy.boundingBox:
@@ -134,6 +148,7 @@ class TextExtractionService {
 
           if (bestMatch != null) {
             matchedText = bestMatch.text;
+            matchedRect = bestMatch.boundingBox;
           }
         }
         break;
@@ -141,6 +156,7 @@ class TextExtractionService {
       case MatchStrategy.absoluteIndex:
         if (instruction.index != null && instruction.index! < allLines.length) {
           matchedText = allLines[instruction.index!].text;
+          matchedRect = allLines[instruction.index!].boundingBox;
         }
         break;
 
@@ -154,7 +170,92 @@ class TextExtractionService {
               int targetIdx = anchorIdx + instruction.offsetOnLine!;
               if (targetIdx >= 0 && targetIdx < docLine.textLines.length) {
                 matchedText = docLine.textLines[targetIdx].text;
+                matchedRect = docLine.textLines[targetIdx].boundingBox;
               }
+              break;
+            }
+          }
+        }
+        break;
+
+      case MatchStrategy.linesBelowAnchor:
+        if (instruction.anchorText != null && instruction.numLinesBelow != null) {
+          for (int i = 0; i < documentLines.length; i++) {
+            var docLine = documentLines[i];
+            
+            // Find the specific anchor block to establish horizontal position
+            TextLine? anchorBlock;
+            for (var l in docLine.textLines) {
+              if (l.text.toLowerCase().contains(instruction.anchorText!.toLowerCase())) {
+                anchorBlock = l;
+                break;
+              }
+            }
+            
+            if (anchorBlock != null) {
+              List<String> combinedLines = [];
+              double? left, top, right, bottom;
+              
+              double anchorLeft = anchorBlock.boundingBox.left;
+              double anchorRight = anchorBlock.boundingBox.right;
+              
+              int count = instruction.numLinesBelow!;
+              int startIndex = count > 0 ? i + 1 : i + count;
+              int endIndex = count > 0 ? i + count : i - 1;
+              
+              for (int targetIndex = startIndex; targetIndex <= endIndex; targetIndex++) {
+                if (targetIndex >= 0 && targetIndex < documentLines.length) {
+                  var targetLine = documentLines[targetIndex];
+                  
+                  // Filter text blocks that align vertically with the anchor
+                  List<TextLine> alignedBlocks = [];
+                  for (var block in targetLine.textLines) {
+                    double blockLeft = block.boundingBox.left;
+                    double blockRight = block.boundingBox.right;
+                    
+                    // Condition: Horizontally overlaps OR left edge is within 100px tolerance
+                    bool overlaps = max(anchorLeft, blockLeft) <= min(anchorRight, blockRight);
+                    bool leftAligned = (anchorLeft - blockLeft).abs() < 100;
+                    
+                    if (overlaps || leftAligned) {
+                      alignedBlocks.add(block);
+                    }
+                  }
+                  
+                  if (alignedBlocks.isNotEmpty) {
+                    String lineText = alignedBlocks.map((e) => e.text).join(' ');
+                    if (lineText.trim().isNotEmpty) {
+                      combinedLines.add(lineText);
+                    }
+                    
+                    for (var block in alignedBlocks) {
+                      if (left == null || block.boundingBox.left < left) left = block.boundingBox.left;
+                      if (top == null || block.boundingBox.top < top) top = block.boundingBox.top;
+                      if (right == null || block.boundingBox.right > right) right = block.boundingBox.right;
+                      if (bottom == null || block.boundingBox.bottom > bottom) bottom = block.boundingBox.bottom;
+                    }
+                  }
+                }
+              }
+              
+              if (combinedLines.isNotEmpty) {
+                matchedText = combinedLines.join('\n');
+                if (left != null && top != null && right != null && bottom != null) {
+                  matchedRect = Rect.fromLTRB(left, top, right, bottom);
+                }
+              }
+              break;
+            }
+          }
+        }
+        break;
+
+      case MatchStrategy.regex:
+        if (instruction.extractRegex != null) {
+          for (var line in allLines) {
+            if (instruction.extractRegex!.hasMatch(line.text)) {
+              matchedText = line.text;
+              matchedRect = line.boundingBox;
               break;
             }
           }
@@ -182,10 +283,17 @@ class TextExtractionService {
       return _processInstruction(instruction.fallback!, allLines, documentLines, imgW, imgH);
     }
 
-    return matchedText;
+    if (matchedText == null) return null;
+    return _InstructionResult(matchedText, matchedRect);
   }
 
   void dispose() {
     _textRecognizer.close();
   }
+}
+
+class _InstructionResult {
+  final String text;
+  final Rect? rect;
+  _InstructionResult(this.text, this.rect);
 }

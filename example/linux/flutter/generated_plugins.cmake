@@ -3,10 +3,12 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  face_detection_tflite
   flutter_doc_scanner
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  flutter_litert
   tflite_flutter
 )
 

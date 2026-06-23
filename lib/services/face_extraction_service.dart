@@ -1,41 +1,92 @@
 import 'dart:io';
 import 'dart:math';
+import 'dart:ui';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as img;
+import 'package:face_detection_tflite/face_detection_tflite.dart' as tflite;
+
+class FaceExtractionResult {
+  final String imagePath;
+  final Rect boundingBox;
+  final List<Offset> meshPoints;
+
+  FaceExtractionResult({
+    required this.imagePath,
+    required this.boundingBox,
+    required this.meshPoints,
+  });
+}
 
 class FaceExtractionService {
   final FaceDetector _faceDetector;
+  tflite.FaceDetector? _backupFaceDetector;
 
   FaceExtractionService()
       : _faceDetector = FaceDetector(
           options: FaceDetectorOptions(
-            enableContours: false,
+            enableContours: true,
             enableClassification: false,
             enableTracking: false,
             enableLandmarks: false,
-            performanceMode: FaceDetectorMode.fast,
+            performanceMode: FaceDetectorMode.accurate,
+            minFaceSize: 0.1,
           ),
         );
 
-  Future<String?> extractFace(String imagePath, {double paddingFactor = 0.2}) async {
+  Future<FaceExtractionResult?> extractFace(String imagePath, {double paddingFactor = 0.2}) async {
     final inputImage = InputImage.fromFilePath(imagePath);
     final List<Face> faces = await _faceDetector.processImage(inputImage);
 
-    if (faces.isEmpty) {
-      return null;
-    }
+    Rect? targetBoundingBox;
+    List<Offset> targetMeshPoints = [];
 
-    // We assume the largest face is the KYC face, or just take the first one.
-    // For ID cards, usually there's only one prominent face.
-    Face targetFace = faces.first;
-    for (var face in faces) {
-      if (face.boundingBox.width * face.boundingBox.height >
-          targetFace.boundingBox.width * targetFace.boundingBox.height) {
-        targetFace = face;
+    if (faces.isNotEmpty) {
+      // We assume the largest face is the KYC face
+      Face targetFace = faces.first;
+      for (var face in faces) {
+        if (face.boundingBox.width * face.boundingBox.height >
+            targetFace.boundingBox.width * targetFace.boundingBox.height) {
+          targetFace = face;
+        }
+      }
+
+      targetBoundingBox = targetFace.boundingBox;
+      final contours = targetFace.contours.values;
+      targetMeshPoints = contours
+          .where((c) => c != null)
+          .expand((c) => c!.points)
+          .map((p) => Offset(p.x.toDouble(), p.y.toDouble()))
+          .toList();
+    } else {
+      // Fallback to TFLite
+      _backupFaceDetector ??= await tflite.FaceDetector.create();
+      final List<tflite.Face> tfliteFaces = await _backupFaceDetector!.detectFacesFromFilepath(imagePath);
+      
+      if (tfliteFaces.isEmpty) {
+        return null;
+      }
+      
+      tflite.Face targetFace = tfliteFaces.first;
+      for (var face in tfliteFaces) {
+        if (face.boundingBox.width * face.boundingBox.height >
+            targetFace.boundingBox.width * targetFace.boundingBox.height) {
+          targetFace = face;
+        }
+      }
+      
+      targetBoundingBox = Rect.fromLTWH(
+        targetFace.boundingBox.topLeft.x.toDouble(),
+        targetFace.boundingBox.topLeft.y.toDouble(),
+        targetFace.boundingBox.width.toDouble(),
+        targetFace.boundingBox.height.toDouble(),
+      );
+      
+      if (targetFace.mesh != null) {
+        targetMeshPoints = targetFace.mesh!.points
+            .map((p) => Offset(p.x.toDouble(), p.y.toDouble()))
+            .toList();
       }
     }
-
-    final boundingBox = targetFace.boundingBox;
 
     // Load original image using the 'image' package to crop it
     final fileBytes = await File(imagePath).readAsBytes();
@@ -44,13 +95,13 @@ class FaceExtractionService {
     if (originalImage == null) return null;
 
     // Calculate padding
-    final paddingX = boundingBox.width * paddingFactor;
-    final paddingY = boundingBox.height * paddingFactor;
+    final paddingX = targetBoundingBox.width * paddingFactor;
+    final paddingY = targetBoundingBox.height * paddingFactor;
 
-    int cropX = (boundingBox.left - paddingX).toInt();
-    int cropY = (boundingBox.top - paddingY).toInt();
-    int cropWidth = (boundingBox.width + 2 * paddingX).toInt();
-    int cropHeight = (boundingBox.height + 2 * paddingY).toInt();
+    int cropX = (targetBoundingBox.left - paddingX).toInt();
+    int cropY = (targetBoundingBox.top - paddingY).toInt();
+    int cropWidth = (targetBoundingBox.width + 2 * paddingX).toInt();
+    int cropHeight = (targetBoundingBox.height + 2 * paddingY).toInt();
 
     // Ensure crop bounds are within the image dimensions
     cropX = max(0, cropX);
@@ -80,10 +131,42 @@ class FaceExtractionService {
     final kycFile = File(kycImagePath);
     await kycFile.writeAsBytes(croppedBytes);
 
-    return kycImagePath;
+    return FaceExtractionResult(
+      imagePath: kycImagePath,
+      boundingBox: targetBoundingBox,
+      meshPoints: targetMeshPoints,
+    );
+  }
+
+  /// Slightly enhances the contrast and brightness of the given image.
+  /// Returns the path to the newly saved enhanced image.
+  Future<String> enhanceImage(String imagePath) async {
+    final fileBytes = await File(imagePath).readAsBytes();
+    final originalImage = img.decodeImage(fileBytes);
+
+    if (originalImage == null) return imagePath;
+
+    // Apply slight contrast (e.g., 1.2 = 120%) and brightness adjustments
+    final enhancedImage = img.adjustColor(
+      originalImage,
+      contrast: 1.2,
+      brightness: 1.1,
+    );
+
+    // Save to temp directory
+    final tempDir = Directory.systemTemp;
+    final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    final String enhancedImagePath = '${tempDir.path}/enhanced_$timestamp.jpg';
+
+    final enhancedBytes = img.encodeJpg(enhancedImage);
+    final enhancedFile = File(enhancedImagePath);
+    await enhancedFile.writeAsBytes(enhancedBytes);
+
+    return enhancedImagePath;
   }
 
   void dispose() {
     _faceDetector.close();
+    _backupFaceDetector?.dispose();
   }
 }
