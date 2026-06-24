@@ -1,7 +1,9 @@
+import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:id_card_scanner/id_card_scanner.dart';
+import 'package:id_card_scanner/services/barcode_extraction_service.dart';
 import 'package:id_card_scanner/services/face_extraction_service.dart';
 import 'package:id_card_scanner/services/text_extraction_service.dart';
 import 'package:id_card_scanner/models/field_instruction.dart';
@@ -20,8 +22,8 @@ class HomePage extends StatelessWidget {
     );
 
     try {
-      final byteData = await rootBundle.load('assets/nin_slip.png');
-      final tempFile = File('${Directory.systemTemp.path}/nin_slip_test.png');
+      final byteData = await rootBundle.load('assets/nin_improved_slip.png');
+      final tempFile = File('${Directory.systemTemp.path}/nin_improved_slip_test.png');
       await tempFile.writeAsBytes(
         byteData.buffer.asUint8List(
           byteData.offsetInBytes,
@@ -31,12 +33,13 @@ class HomePage extends StatelessWidget {
 
       final faceService = FaceExtractionService();
       final textService = TextExtractionService();
+      final barCodeService = BarcodeExtractionService();
 
       final faceResult = await faceService.extractFace(tempFile.path);
       final kycPath = faceResult?.imagePath;
 
       final mockInstructions =
-          instructionSet[DetectedType.nin_slip];
+          instructionSet[DetectedType.nin_improved_slip];
       if (mockInstructions == null) {
         throw Exception("no instruction set for this card type");
       }
@@ -44,10 +47,20 @@ class HomePage extends StatelessWidget {
         tempFile.path,
         mockInstructions,
       );
+
+      final barcodeResult = await barCodeService.extractBarcodes(
+        tempFile.path
+      );
+
+      inspect(barcodeResult);
+
+
       final extractedData = extractionResult.data;
+      
 
       faceService.dispose();
       textService.dispose();
+      barCodeService.dispose();
 
       if (context.mounted) {
         Navigator.pop(context); // remove loading
@@ -60,6 +73,10 @@ class HomePage extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (kycPath != null) Image.file(File(kycPath), height: 100),
+                if (barcodeResult.barcodeImgPath != null) ...[
+                  const SizedBox(height: 16),
+                  Image.file(File(barcodeResult.barcodeImgPath!), height: 80),
+                ],
                 const SizedBox(height: 16),
                 const Text(
                   'Extracted Fields:',
@@ -68,6 +85,16 @@ class HomePage extends StatelessWidget {
                 ...extractedData.entries.map(
                   (e) => Text('${e.key}: ${e.value}'),
                 ),
+                if (barcodeResult.barcodes.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Extracted Barcodes:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  ...barcodeResult.barcodes.map(
+                    (b) => Text(b),
+                  ),
+                ],
               ],
             ),
             actions: [
@@ -81,6 +108,9 @@ class HomePage extends StatelessWidget {
                     textBoundingBoxes: extractionResult.boundingBoxes,
                     faceBoundingBox: faceResult?.boundingBox,
                     faceMeshPoints: faceResult?.meshPoints,
+                    extractedBarcodes: barcodeResult.barcodes,
+                    barcodeImgPath: barcodeResult.barcodeImgPath,
+                    barcodeBoundingBox: barcodeResult.barcodeBoundingBox,
                   );
                   Navigator.push(
                     context,

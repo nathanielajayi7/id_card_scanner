@@ -104,6 +104,15 @@ class OverlayPainter extends CustomPainter {
       canvas.drawRect(scanResult.faceBoundingBox!, faceBoxPaint);
     }
 
+    // Draw barcode bounding box
+    if (scanResult.barcodeBoundingBox != null) {
+      final barcodeBoxPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6.0
+        ..color = Colors.purpleAccent;
+      canvas.drawRect(scanResult.barcodeBoundingBox!, barcodeBoxPaint);
+    }
+
     // Draw face mesh
     if (scanResult.faceMeshPoints != null && scanResult.faceMeshPoints!.isNotEmpty) {
       final meshPaint = Paint()

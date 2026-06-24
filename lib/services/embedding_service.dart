@@ -32,15 +32,15 @@ class EmbeddingService {
     if (image == null) return null;
 
     // Preprocess: Resize to 224x224
-    final resized = img.copyResize(image, width: 224, height: 224);
+    final resized = img.copyResize(image, width: 304, height: 192);
 
     // MobileNetV2 expects input shape [1, 224, 224, 3] and values in [-1, 1]
     // Using a flat Float32List is significantly faster and more memory-efficient than nested lists.
-    var inputBuffer = Float32List(1 * 224 * 224 * 3);
+    var inputBuffer = Float32List(1 * 304 * 192 * 3);
     int pixelIndex = 0;
 
-    for (int y = 0; y < 224; y++) {
-      for (int x = 0; x < 224; x++) {
+    for (int y = 0; y < 192; y++) {
+      for (int x = 0; x < 304; x++) {
         final pixel = resized.getPixel(x, y);
         // Normalized to [-1, 1]
         inputBuffer[pixelIndex++] = (pixel.r / 127.5) - 1.0;
@@ -50,7 +50,7 @@ class EmbeddingService {
     }
 
     // tflite_flutter expects the input as the reshaped structure
-    var input = inputBuffer.reshape([1, 224, 224, 3]);
+    var input = inputBuffer.reshape([1, 192, 304, 3]);
 
     // Output shape for this model is likely [1, 1280]
     var output = List.generate(1, (i) => List.filled(1280, 0.0));
@@ -60,17 +60,20 @@ class EmbeddingService {
 
     // Compare to anchors using Cosine Similarity and Euclidean Distance
     String bestMatch = "unknown";
-    double maxSimilarity = -1.0;
+    double bestScore = -double.infinity;
 
     for (var entry in _anchors.entries) {
       double sim = _cosineSimilarity(embedding, entry.value);
       double dist = _euclideanDistance(embedding, entry.value);
       
-      // Logging Euclidean distance for redundancy/debugging
-      debugPrint('Anchor: ${entry.key} -> Cosine Sim: $sim | Euclidean Dist: $dist');
+      // Combine metrics: maximize similarity and minimize distance, scaled down
+      double combinedScore = sim - (dist / 100.0);
+      
+      // Logging for redundancy/debugging
+      debugPrint('Anchor: ${entry.key} -> Cosine Sim: $sim | Euclidean Dist: $dist | Combined: $combinedScore');
 
-      if (sim > maxSimilarity) {
-        maxSimilarity = sim;
+      if (combinedScore > bestScore) {
+        bestScore = combinedScore;
         bestMatch = entry.key;
       }
     }

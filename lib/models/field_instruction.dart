@@ -58,10 +58,12 @@ Map<DetectedType, List<FieldInstruction>> get instructionSet => {
       offsetOnLine: 1, // take the text box to the right of it
       //extract only numbers
       extractRegex: RegExp(r'\d+'),
-      fallback: FieldInstruction(attributeName: "NIN Number", 
-      // extractRegex: 
-      extractRegex: RegExp(r'\d{11}'),
-      strategy: MatchStrategy.regex)
+      fallback: FieldInstruction(
+        attributeName: "NIN Number",
+        // extractRegex:
+        extractRegex: RegExp(r'\d{11}'),
+        strategy: MatchStrategy.regex,
+      ),
     ),
     FieldInstruction(
       attributeName: 'First Name',
@@ -127,10 +129,12 @@ Map<DetectedType, List<FieldInstruction>> get instructionSet => {
       anchorText: 'Surname:', // arbitrary mock index
       //return the unbroken text with 15 chars
       extractRegex: RegExp(r'\b\S{15}\b'),
-      fallback: FieldInstruction(attributeName: "NIN Number", 
-      // extractRegex: 
-      extractRegex: RegExp(r'\b\S{15}\b'),
-      strategy: MatchStrategy.regex)
+      fallback: FieldInstruction(
+        attributeName: "NIN Number",
+        // extractRegex:
+        extractRegex: RegExp(r'\b\S{15}\b'),
+        strategy: MatchStrategy.regex,
+      ),
     ),
 
     //gender
@@ -167,6 +171,71 @@ Map<DetectedType, List<FieldInstruction>> get instructionSet => {
       numLinesBelow: 3,
     ),
   ],
+
+  DetectedType.nin_improved_slip: [
+    FieldInstruction(
+      attributeName: "Surname",
+      strategy: MatchStrategy.linesBelowAnchor,
+      numLinesBelow: 1,
+      anchorText: "Surname",
+      fallback: FieldInstruction(
+        attributeName: "Surname",
+        strategy: MatchStrategy.linesBelowAnchor,
+        numLinesBelow: 1,
+        anchorText: "Nom",
+      ),
+    ),
+    FieldInstruction(
+      attributeName: "First Name",
+      strategy: MatchStrategy.linesBelowAnchor,
+      numLinesBelow: 1,
+      anchorText: "Given Name",
+      formatter: (p0) {
+        if (!p0.contains(",")) {
+          return p0.trim();
+        }
+        return p0.split(",").first.trim();
+      },
+    ),
+    FieldInstruction(
+      attributeName: "Middle Name",
+      strategy: MatchStrategy.linesBelowAnchor,
+      numLinesBelow: 1,
+      anchorText: "Given Name",
+      formatter: (p0) {
+        if (!p0.contains(",")) {
+          return '';
+        }
+        return p0.split(",").last.trim();
+      },
+    ),
+
+    //date of birth
+    FieldInstruction(
+      attributeName: 'Date of Birth',
+      strategy: MatchStrategy.regex,
+      extractRegex: RegExp(r'\b\d{2}\s+[a-zA-Z]{3}\s+\d{4}\b'),
+      fallback: FieldInstruction(
+        attributeName: 'Date of Birth',
+        strategy: MatchStrategy.regex,
+        extractRegex: RegExp(r'\b\d{2}\s+[a-zA-Z]{3}\s+\d{2}\b'),
+      ),
+    ),
+    FieldInstruction(
+      attributeName: "NIN",
+      strategy: MatchStrategy.regex,
+
+      extractRegex: RegExp(r'\d{4}\s\d{3}\s\d{4}'),
+      formatter: (p0) => p0.replaceAll(' ', ''),
+      // numLinesBelow: 1,
+      // anchorText: "NATIONAL IDENTIFICATION ",
+      fallback: FieldInstruction(
+        attributeName: "NIN",
+        strategy: MatchStrategy.regex,
+        extractRegex: RegExp(r'\d{11}'),
+      ),
+    ),
+  ],
 };
 
-enum DetectedType { nin_slip }
+enum DetectedType { nin_slip, nin_improved_slip }

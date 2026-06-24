@@ -17,8 +17,8 @@ class ResultPage extends StatelessWidget {
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: ListView(
+            // mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
               const Icon(
                 Icons.check_circle_outline,
@@ -58,12 +58,33 @@ class ResultPage extends StatelessWidget {
                         ),
                       ),
                     ],
+                    if (scanResult.barcodeImgPath != null) ...[
+                      const SizedBox(height: 16),
+                      const Text('Extracted Barcode:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          File(scanResult.barcodeImgPath!),
+                          height: 100,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ],
                     if (scanResult.extractedData != null && scanResult.extractedData!.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       const Text('Extracted Fields:', style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       ...scanResult.extractedData!.entries.map(
                         (e) => Text('${e.key}: ${e.value}', style: const TextStyle(fontSize: 14)),
+                      ).toList(),
+                    ],
+                    if (scanResult.extractedBarcodes != null && scanResult.extractedBarcodes!.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Text('Extracted Barcodes:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      ...scanResult.extractedBarcodes!.map(
+                        (b) => Text(b, style: const TextStyle(fontSize: 14)),
                       ).toList(),
                     ]
                   ],

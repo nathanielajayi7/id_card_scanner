@@ -11,6 +11,9 @@ class ScanDocument {
   Map<String, Rect>? textBoundingBoxes;
   List<Offset>? faceMeshPoints;
   Rect? faceBoundingBox;
+  List<String>? extractedBarcodes;
+  String? barcodeImgPath;
+  Rect? barcodeBoundingBox;
 
   ScanDocument({
     required this.rawData,
@@ -20,6 +23,9 @@ class ScanDocument {
     this.textBoundingBoxes,
     this.faceMeshPoints,
     this.faceBoundingBox,
+    this.extractedBarcodes,
+    this.barcodeImgPath,
+    this.barcodeBoundingBox,
   });
 
   // Helper to extract the first image path from typical flutter_doc_scanner output

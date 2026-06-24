@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
@@ -5,6 +7,7 @@ import '../models/scan_document.dart';
 import '../services/embedding_service.dart';
 import '../services/face_extraction_service.dart';
 import '../services/text_extraction_service.dart';
+import '../services/barcode_extraction_service.dart';
 import '../models/field_instruction.dart';
 
 class ScannerController extends ChangeNotifier {
@@ -14,6 +17,7 @@ class ScannerController extends ChangeNotifier {
   final EmbeddingService _embeddingService = EmbeddingService();
   final FaceExtractionService _faceExtractionService = FaceExtractionService();
   final TextExtractionService _textExtractionService = TextExtractionService();
+  final BarcodeExtractionService _barcodeExtractionService = BarcodeExtractionService();
 
   ScanDocument? get scanResult => _scanResult;
   String? get errorMessage => _errorMessage;
@@ -54,6 +58,7 @@ class ScannerController extends ChangeNotifier {
             doc.faceMeshPoints = faceExtractionResult.meshPoints;
           }
 
+          inspect(type);
           final instructions =
               instructionSet[DetectedType.values.firstWhere(
                 (e) => e.name.toString() == type,
@@ -66,6 +71,14 @@ class ScannerController extends ChangeNotifier {
               .extractAttributes(imagePath, instructions);
           doc.extractedData = textExtractionResult.data;
           doc.textBoundingBoxes = textExtractionResult.boundingBoxes;
+
+          // Extract barcodes
+          final barcodeResult = await _barcodeExtractionService.extractBarcodes(imagePath);
+          if (barcodeResult.barcodes.isNotEmpty) {
+            doc.extractedBarcodes = barcodeResult.barcodes;
+            doc.barcodeImgPath = barcodeResult.barcodeImgPath;
+            doc.barcodeBoundingBox = barcodeResult.barcodeBoundingBox;
+          }
         }
 
         _scanResult = doc;
@@ -97,6 +110,7 @@ class ScannerController extends ChangeNotifier {
   void dispose() {
     _faceExtractionService.dispose();
     _textExtractionService.dispose();
+    _barcodeExtractionService.dispose();
     super.dispose();
   }
 }
