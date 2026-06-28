@@ -44,8 +44,9 @@ class ScannerController extends ChangeNotifier {
         var imagePath = doc.firstImagePath;
         if (imagePath != null) {
           // Slightly enhance image contrast and brightness before processing
-          imagePath = await _faceExtractionService.enhanceImage(imagePath);
-          
+          String imagePath2 = await _faceExtractionService.enhanceImage(imagePath, type: doc.detectedType);
+          // doc.firstImagePath = imagePath;
+          // throw Exception(imagePath);
           final type = await _embeddingService.classifyDocument(imagePath);
           doc.detectedType = type;
           // Attempt to extract face for KYC
@@ -68,7 +69,7 @@ class ScannerController extends ChangeNotifier {
           }
 
           final textExtractionResult = await _textExtractionService
-              .extractAttributes(imagePath, instructions);
+              .extractAttributes(imagePath2, instructions);
           doc.extractedData = textExtractionResult.data;
           doc.textBoundingBoxes = textExtractionResult.boundingBoxes;
 

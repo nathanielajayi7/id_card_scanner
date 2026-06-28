@@ -13,12 +13,21 @@ class EmbeddingService {
 
   Future<void> initialize() async {
     // Load model
-    _interpreter = await Interpreter.fromAsset('packages/id_card_scanner/assets/mobilenet_v2_1.0_224.tflite');
+    _interpreter = await Interpreter.fromAsset(
+      'packages/id_card_scanner/assets/mobilenet_v2_1.0_224.tflite',
+    );
 
     // Load anchors
-    final jsonStr = await rootBundle.loadString('packages/id_card_scanner/assets/anchors.json');
+    final jsonStr = await rootBundle.loadString(
+      'packages/id_card_scanner/assets/anchors.json',
+    );
     final Map<String, dynamic> rawAnchors = jsonDecode(jsonStr);
-    _anchors = rawAnchors.map((key, value) => MapEntry(key, List<double>.from(value.map((e) => (e as num).toDouble()))));
+    _anchors = rawAnchors.map(
+      (key, value) => MapEntry(
+        key,
+        List<double>.from(value.map((e) => (e as num).toDouble())),
+      ),
+    );
   }
 
   Future<String?> classifyDocument(String imagePath) async {
@@ -65,12 +74,14 @@ class EmbeddingService {
     for (var entry in _anchors.entries) {
       double sim = _cosineSimilarity(embedding, entry.value);
       double dist = _euclideanDistance(embedding, entry.value);
-      
+
       // Combine metrics: maximize similarity and minimize distance, scaled down
-      double combinedScore = sim - (dist / 100.0);
-      
+      double combinedScore = sim + ((100 - dist).abs() / 1000);
+
       // Logging for redundancy/debugging
-      debugPrint('Anchor: ${entry.key} -> Cosine Sim: $sim | Euclidean Dist: $dist | Combined: $combinedScore');
+      debugPrint(
+        'Anchor: ${entry.key} -> Cosine Sim: $sim | Euclidean Dist: $dist | Combined: $combinedScore',
+      );
 
       if (combinedScore > bestScore) {
         bestScore = combinedScore;

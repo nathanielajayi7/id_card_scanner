@@ -22,18 +22,21 @@ class FaceExtractionService {
   tflite.FaceDetector? _backupFaceDetector;
 
   FaceExtractionService()
-      : _faceDetector = FaceDetector(
-          options: FaceDetectorOptions(
-            enableContours: true,
-            enableClassification: false,
-            enableTracking: false,
-            enableLandmarks: false,
-            performanceMode: FaceDetectorMode.accurate,
-            minFaceSize: 0.1,
-          ),
-        );
+    : _faceDetector = FaceDetector(
+        options: FaceDetectorOptions(
+          enableContours: true,
+          enableClassification: false,
+          enableTracking: false,
+          enableLandmarks: false,
+          performanceMode: FaceDetectorMode.accurate,
+          minFaceSize: 0.1,
+        ),
+      );
 
-  Future<FaceExtractionResult?> extractFace(String imagePath, {double paddingFactor = 0.2}) async {
+  Future<FaceExtractionResult?> extractFace(
+    String imagePath, {
+    double paddingFactor = 0.2,
+  }) async {
     final inputImage = InputImage.fromFilePath(imagePath);
     final List<Face> faces = await _faceDetector.processImage(inputImage);
 
@@ -60,12 +63,13 @@ class FaceExtractionService {
     } else {
       // Fallback to TFLite
       _backupFaceDetector ??= await tflite.FaceDetector.create();
-      final List<tflite.Face> tfliteFaces = await _backupFaceDetector!.detectFacesFromFilepath(imagePath);
-      
+      final List<tflite.Face> tfliteFaces = await _backupFaceDetector!
+          .detectFacesFromFilepath(imagePath);
+
       if (tfliteFaces.isEmpty) {
         return null;
       }
-      
+
       tflite.Face targetFace = tfliteFaces.first;
       for (var face in tfliteFaces) {
         if (face.boundingBox.width * face.boundingBox.height >
@@ -73,14 +77,14 @@ class FaceExtractionService {
           targetFace = face;
         }
       }
-      
+
       targetBoundingBox = Rect.fromLTWH(
         targetFace.boundingBox.topLeft.x.toDouble(),
         targetFace.boundingBox.topLeft.y.toDouble(),
         targetFace.boundingBox.width.toDouble(),
         targetFace.boundingBox.height.toDouble(),
       );
-      
+
       if (targetFace.mesh != null) {
         targetMeshPoints = targetFace.mesh!.points
             .map((p) => Offset(p.x.toDouble(), p.y.toDouble()))
@@ -140,7 +144,7 @@ class FaceExtractionService {
 
   /// Slightly enhances the contrast and brightness of the given image.
   /// Returns the path to the newly saved enhanced image.
-  Future<String> enhanceImage(String imagePath) async {
+  Future<String> enhanceImage(String imagePath, {String? type}) async {
     final fileBytes = await File(imagePath).readAsBytes();
     final originalImage = img.decodeImage(fileBytes);
 
@@ -149,20 +153,29 @@ class FaceExtractionService {
     // Apply slight contrast (e.g., 1.2 = 120%) and brightness adjustments
     final enhancedImage = img.adjustColor(
       originalImage,
-      contrast: 1.2,
-      brightness: 1.1,
+      contrast: imageNeedsContrast(type) ? 1.5 : 1.2,
+      brightness: imageNeedsContrast(type) ? 1.3 : 1.1,
     );
+
+    img.Image grayscale = img.grayscale(enhancedImage);
+
+    // 2. Boost the contrast sharply to make faint text solid black
+    img.Image highContrast = img.contrast(grayscale, contrast: 150);
 
     // Save to temp directory
     final tempDir = Directory.systemTemp;
     final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
     final String enhancedImagePath = '${tempDir.path}/enhanced_$timestamp.jpg';
 
-    final enhancedBytes = img.encodeJpg(enhancedImage);
+    final enhancedBytes = img.encodeJpg(highContrast);
     final enhancedFile = File(enhancedImagePath);
     await enhancedFile.writeAsBytes(enhancedBytes);
 
     return enhancedImagePath;
+  }
+
+  bool imageNeedsContrast(String? type) {
+    return type == "passort" || type == "digital_nin_slip";
   }
 
   void dispose() {

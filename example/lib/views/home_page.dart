@@ -1,5 +1,6 @@
 import 'dart:developer';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:id_card_scanner/id_card_scanner.dart';
@@ -10,6 +11,7 @@ import 'package:id_card_scanner/models/field_instruction.dart';
 import 'package:id_card_scanner/models/scan_document.dart';
 import 'package:id_card_scanner/views/explore_result_page.dart';
 import 'package:flutter_doc_scanner/flutter_doc_scanner.dart';
+import 'package:image/image.dart' as img;
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -22,34 +24,37 @@ class HomePage extends StatelessWidget {
     );
 
     try {
-      final byteData = await rootBundle.load('assets/nin_improved_slip.png');
-      final tempFile = File('${Directory.systemTemp.path}/nin_improved_slip_test.png');
-      await tempFile.writeAsBytes(
-        byteData.buffer.asUint8List(
-          byteData.offsetInBytes,
-          byteData.lengthInBytes,
-        ),
-      );
+      final byteData = await rootBundle.load('assets/verified_nin.png');
+
+      // final originalImage = 
+
+      final tempFile = await enhanceImage(byteData);
+      // await tempFile.writeAsBytes(
+      //   highContrast.buffer.asUint8List(
+      //     byteData.offsetInBytes,
+      //     byteData.lengthInBytes,
+      //   ),
+      // );
 
       final faceService = FaceExtractionService();
       final textService = TextExtractionService();
       final barCodeService = BarcodeExtractionService();
 
-      final faceResult = await faceService.extractFace(tempFile.path);
+      final faceResult = await faceService.extractFace(tempFile);
       final kycPath = faceResult?.imagePath;
 
       final mockInstructions =
-          instructionSet[DetectedType.nin_improved_slip];
+          instructionSet[DetectedType.verified_nin];
       if (mockInstructions == null) {
         throw Exception("no instruction set for this card type");
       }
       final extractionResult = await textService.extractAttributes(
-        tempFile.path,
+        tempFile,
         mockInstructions,
       );
 
       final barcodeResult = await barCodeService.extractBarcodes(
-        tempFile.path
+        tempFile
       );
 
       inspect(barcodeResult);
@@ -102,7 +107,7 @@ class HomePage extends StatelessWidget {
                 onPressed: () {
                   Navigator.pop(context);
                   final scanDoc = ScanDocument(
-                    rawData: ImageScanResult(images: [Uri.file(tempFile.path).toString()]),
+                    rawData: ImageScanResult(images: [Uri.file(tempFile).toString()]),
                     kycImagePath: kycPath,
                     extractedData: extractedData,
                     textBoundingBoxes: extractionResult.boundingBoxes,
@@ -206,3 +211,35 @@ class HomePage extends StatelessWidget {
     );
   }
 }
+
+/// Slightly enhances the contrast and brightness of the given image.
+  /// Returns the path to the newly saved enhanced image.
+  Future<String> enhanceImage(ByteData image) async {
+    final fileBytes = image;
+    final originalImage = img.decodeImage(fileBytes.buffer.asUint8List());
+
+    if (originalImage == null) return '';
+
+    // Apply slight contrast (e.g., 1.2 = 120%) and brightness adjustments
+    final enhancedImage = img.adjustColor(
+      originalImage,
+      contrast: 1.2,
+      brightness: 1.1,
+    );
+
+    // img.Image grayscale = img.grayscale(enhancedImage); .
+
+    // 2. Boost the contrast sharply to make faint text solid black
+    // img.Image highContrast = img;
+
+    // Save to temp directory
+    final tempDir = Directory.systemTemp;
+    final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    final String enhancedImagePath = '${tempDir.path}/enhanced_$timestamp.jpg';
+
+    final enhancedBytes = img.encodeJpg(enhancedImage);
+    final enhancedFile = File(enhancedImagePath);
+    await enhancedFile.writeAsBytes(enhancedBytes);
+
+    return enhancedImagePath;
+  }

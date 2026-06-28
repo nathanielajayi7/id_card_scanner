@@ -28,6 +28,12 @@ class ScanDocument {
     this.barcodeBoundingBox,
   });
 
+  set firstImagePath(String? path) {
+    if (path != null && rawData.images.isNotEmpty) {
+      rawData.images[0] = path;
+    }
+  }
+
   // Helper to extract the first image path from typical flutter_doc_scanner output
   String? get firstImagePath{ 
     final String path = rawData.images.first;

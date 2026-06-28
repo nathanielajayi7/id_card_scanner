@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -23,14 +24,16 @@ class TextExtractionService {
   final TextRecognizer _textRecognizer;
 
   TextExtractionService()
-      : _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+    : _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
 
   Future<TextExtractionResult> extractAttributes(
     String imagePath,
     List<FieldInstruction> instructions,
   ) async {
     final inputImage = InputImage.fromFilePath(imagePath);
-    final RecognizedText recognizedText = await _textRecognizer.processImage(inputImage);
+    final RecognizedText recognizedText = await _textRecognizer.processImage(
+      inputImage,
+    );
 
     // Get image dimensions for relative bounding box calculations
     final fileBytes = await File(imagePath).readAsBytes();
@@ -72,14 +75,23 @@ class TextExtractionService {
 
     // Sort blocks horizontally within each line
     for (var docLine in documentLines) {
-      docLine.textLines.sort((a, b) => a.boundingBox.left.compareTo(b.boundingBox.left));
+      docLine.textLines.sort(
+        (a, b) => a.boundingBox.left.compareTo(b.boundingBox.left),
+      );
     }
 
     Map<String, String> extractedData = {};
     Map<String, Rect> extractedRects = {};
 
     for (var instruction in instructions) {
-      final result = _processInstruction(instruction, allLines, documentLines, imgW, imgH);
+      final result = _processInstruction(
+        instruction,
+        allLines,
+        documentLines,
+        imgW,
+        imgH,
+        extractedRects,
+      );
       final matchedText = result?.text;
       final matchedRect = result?.rect;
 
@@ -91,7 +103,10 @@ class TextExtractionService {
       }
     }
 
-    return TextExtractionResult(data: extractedData, boundingBoxes: extractedRects);
+    return TextExtractionResult(
+      data: extractedData,
+      boundingBoxes: extractedRects,
+    );
   }
 
   _InstructionResult? _processInstruction(
@@ -100,6 +115,7 @@ class TextExtractionService {
     List<_DocumentLine> documentLines,
     double imgW,
     double imgH,
+    Map<String, Rect> extractedRects,
   ) {
     String? matchedText;
     Rect? matchedRect;
@@ -118,10 +134,14 @@ class TextExtractionService {
           double highestOverlap = -1.0;
 
           for (var line in allLines) {
-            final intersect = expectedRect.intersect(Rect.fromLTWH(
-              line.boundingBox.left, line.boundingBox.top, 
-              line.boundingBox.width, line.boundingBox.height
-            ));
+            final intersect = expectedRect.intersect(
+              Rect.fromLTWH(
+                line.boundingBox.left,
+                line.boundingBox.top,
+                line.boundingBox.width,
+                line.boundingBox.height,
+              ),
+            );
 
             if (intersect.width > 0 && intersect.height > 0) {
               double overlapArea = intersect.width * intersect.height;
@@ -136,8 +156,12 @@ class TextExtractionService {
           if (bestMatch == null) {
             double minDistance = double.infinity;
             for (var line in allLines) {
-              double dx = expectedRect.center.dx - (line.boundingBox.left + line.boundingBox.width / 2);
-              double dy = expectedRect.center.dy - (line.boundingBox.top + line.boundingBox.height / 2);
+              double dx =
+                  expectedRect.center.dx -
+                  (line.boundingBox.left + line.boundingBox.width / 2);
+              double dy =
+                  expectedRect.center.dy -
+                  (line.boundingBox.top + line.boundingBox.height / 2);
               double dist = sqrt(dx * dx + dy * dy);
               if (dist < minDistance) {
                 minDistance = dist;
@@ -161,11 +185,15 @@ class TextExtractionService {
         break;
 
       case MatchStrategy.sameLineAsAnchor:
-        if (instruction.anchorText != null && instruction.offsetOnLine != null) {
+        if (instruction.anchorText != null &&
+            instruction.offsetOnLine != null) {
           for (var docLine in documentLines) {
-            int anchorIdx = docLine.textLines.indexWhere((l) =>
-                l.text.toLowerCase().contains(instruction.anchorText!.toLowerCase()));
-            
+            int anchorIdx = docLine.textLines.indexWhere(
+              (l) => l.text.toLowerCase().contains(
+                instruction.anchorText!.toLowerCase(),
+              ),
+            );
+
             if (anchorIdx != -1) {
               int targetIdx = anchorIdx + instruction.offsetOnLine!;
               if (targetIdx >= 0 && targetIdx < docLine.textLines.length) {
@@ -179,68 +207,86 @@ class TextExtractionService {
         break;
 
       case MatchStrategy.linesBelowAnchor:
-        if (instruction.anchorText != null && instruction.numLinesBelow != null) {
+        if (instruction.anchorText != null &&
+            instruction.numLinesBelow != null) {
           for (int i = 0; i < documentLines.length; i++) {
             var docLine = documentLines[i];
-            
+
             // Find the specific anchor block to establish horizontal position
             TextLine? anchorBlock;
             for (var l in docLine.textLines) {
-              if (l.text.toLowerCase().contains(instruction.anchorText!.toLowerCase())) {
+              if (l.text.toLowerCase().contains(
+                instruction.anchorText!.toLowerCase(),
+              )) {
                 anchorBlock = l;
                 break;
               }
             }
-            
+
             if (anchorBlock != null) {
               List<String> combinedLines = [];
               double? left, top, right, bottom;
-              
+
               double anchorLeft = anchorBlock.boundingBox.left;
               double anchorRight = anchorBlock.boundingBox.right;
-              
+
               int count = instruction.numLinesBelow!;
               int startIndex = count > 0 ? i + 1 : i + count;
               int endIndex = count > 0 ? i + count : i - 1;
-              
-              for (int targetIndex = startIndex; targetIndex <= endIndex; targetIndex++) {
+
+              for (
+                int targetIndex = startIndex;
+                targetIndex <= endIndex;
+                targetIndex++
+              ) {
                 if (targetIndex >= 0 && targetIndex < documentLines.length) {
                   var targetLine = documentLines[targetIndex];
-                  
+
                   // Filter text blocks that align vertically with the anchor
                   List<TextLine> alignedBlocks = [];
                   for (var block in targetLine.textLines) {
                     double blockLeft = block.boundingBox.left;
                     double blockRight = block.boundingBox.right;
-                    
+
                     // Condition: Horizontally overlaps OR left edge is within 100px tolerance
-                    bool overlaps = max(anchorLeft, blockLeft) <= min(anchorRight, blockRight);
+                    bool overlaps =
+                        max(anchorLeft, blockLeft) <=
+                        min(anchorRight, blockRight);
                     bool leftAligned = (anchorLeft - blockLeft).abs() < 100;
-                    
+
                     if (overlaps || leftAligned) {
                       alignedBlocks.add(block);
                     }
                   }
-                  
+
                   if (alignedBlocks.isNotEmpty) {
-                    String lineText = alignedBlocks.map((e) => e.text).join(' ');
+                    String lineText = alignedBlocks
+                        .map((e) => e.text)
+                        .join(' ');
                     if (lineText.trim().isNotEmpty) {
                       combinedLines.add(lineText);
                     }
-                    
+
                     for (var block in alignedBlocks) {
-                      if (left == null || block.boundingBox.left < left) left = block.boundingBox.left;
-                      if (top == null || block.boundingBox.top < top) top = block.boundingBox.top;
-                      if (right == null || block.boundingBox.right > right) right = block.boundingBox.right;
-                      if (bottom == null || block.boundingBox.bottom > bottom) bottom = block.boundingBox.bottom;
+                      if (left == null || block.boundingBox.left < left)
+                        left = block.boundingBox.left;
+                      if (top == null || block.boundingBox.top < top)
+                        top = block.boundingBox.top;
+                      if (right == null || block.boundingBox.right > right)
+                        right = block.boundingBox.right;
+                      if (bottom == null || block.boundingBox.bottom > bottom)
+                        bottom = block.boundingBox.bottom;
                     }
                   }
                 }
               }
-              
+
               if (combinedLines.isNotEmpty) {
                 matchedText = combinedLines.join('\n');
-                if (left != null && top != null && right != null && bottom != null) {
+                if (left != null &&
+                    top != null &&
+                    right != null &&
+                    bottom != null) {
                   matchedRect = Rect.fromLTRB(left, top, right, bottom);
                 }
               }
@@ -250,13 +296,212 @@ class TextExtractionService {
         }
         break;
 
+      case MatchStrategy.regexAnchor:
+        if (instruction.anchorRegex != null) {
+          for (int i = 0; i < documentLines.length; i++) {
+            var docLine = documentLines[i];
+
+            TextLine? anchorBlock;
+            int anchorIdx = -1;
+            for (int j = 0; j < docLine.textLines.length; j++) {
+              if (instruction.anchorRegex!.hasMatch(docLine.textLines[j].text)) {
+                anchorBlock = docLine.textLines[j];
+                anchorIdx = j;
+                break;
+              }
+            }
+
+            if (anchorBlock != null) {
+              if (instruction.numLinesBelow != null) {
+                List<String> combinedLines = [];
+                double? left, top, right, bottom;
+
+                double anchorLeft = anchorBlock.boundingBox.left;
+                double anchorRight = anchorBlock.boundingBox.right;
+
+                int count = instruction.numLinesBelow!;
+                int startIndex = count > 0 ? i + 1 : i + count;
+                int endIndex = count > 0 ? i + count : i - 1;
+
+                for (
+                  int targetIndex = startIndex;
+                  targetIndex <= endIndex;
+                  targetIndex++
+                ) {
+                  if (targetIndex >= 0 && targetIndex < documentLines.length) {
+                    var targetLine = documentLines[targetIndex];
+
+                    List<TextLine> alignedBlocks = [];
+                    for (var block in targetLine.textLines) {
+                      double blockLeft = block.boundingBox.left;
+                      double blockRight = block.boundingBox.right;
+
+                      bool overlaps =
+                          max(anchorLeft, blockLeft) <=
+                          min(anchorRight, blockRight);
+                      bool leftAligned = (anchorLeft - blockLeft).abs() < 100;
+
+                      if (overlaps || leftAligned) {
+                        alignedBlocks.add(block);
+                      }
+                    }
+
+                    if (alignedBlocks.isNotEmpty) {
+                      String lineText = alignedBlocks
+                          .map((e) => e.text)
+                          .join(' ');
+                      if (lineText.trim().isNotEmpty) {
+                        combinedLines.add(lineText);
+                      }
+
+                      for (var block in alignedBlocks) {
+                        if (left == null || block.boundingBox.left < left) left = block.boundingBox.left;
+                        if (top == null || block.boundingBox.top < top) top = block.boundingBox.top;
+                        if (right == null || block.boundingBox.right > right) right = block.boundingBox.right;
+                        if (bottom == null || block.boundingBox.bottom > bottom) bottom = block.boundingBox.bottom;
+                      }
+                    }
+                  }
+                }
+
+                if (combinedLines.isNotEmpty) {
+                  matchedText = combinedLines.join('\n');
+                  if (left != null && top != null && right != null && bottom != null) {
+                    matchedRect = Rect.fromLTRB(left, top, right, bottom);
+                  }
+                }
+                break;
+              } else if (instruction.offsetOnLine != null) {
+                int targetIdx = anchorIdx + instruction.offsetOnLine!;
+                if (targetIdx >= 0 && targetIdx < docLine.textLines.length) {
+                  matchedText = docLine.textLines[targetIdx].text;
+                  matchedRect = docLine.textLines[targetIdx].boundingBox;
+                }
+                break;
+              }
+            }
+          }
+        }
+        break;
+
+      case MatchStrategy.relativeToKnownField:
+        if (instruction.knownFieldAnchor != null &&
+            extractedRects.containsKey(instruction.knownFieldAnchor)) {
+          Rect knownRect = extractedRects[instruction.knownFieldAnchor]!;
+
+          for (int i = 0; i < documentLines.length; i++) {
+            var docLine = documentLines[i];
+
+            TextLine? anchorBlock;
+            int anchorIdx = -1;
+            for (int j = 0; j < docLine.textLines.length; j++) {
+              final b = docLine.textLines[j].boundingBox;
+              if (b.left == knownRect.left &&
+                  b.top == knownRect.top &&
+                  b.width == knownRect.width &&
+                  b.height == knownRect.height) {
+                anchorBlock = docLine.textLines[j];
+                anchorIdx = j;
+                break;
+              }
+            }
+
+            if (anchorBlock != null) {
+              if (instruction.numLinesBelow != null) {
+                List<String> combinedLines = [];
+                double? left, top, right, bottom;
+
+                double anchorLeft = anchorBlock.boundingBox.left;
+                double anchorRight = anchorBlock.boundingBox.right;
+
+                int count = instruction.numLinesBelow!;
+                int startIndex = count > 0 ? i + 1 : i + count;
+                int endIndex = count > 0 ? i + count : i - 1;
+
+                for (
+                  int targetIndex = startIndex;
+                  targetIndex <= endIndex;
+                  targetIndex++
+                ) {
+                  if (targetIndex >= 0 && targetIndex < documentLines.length) {
+                    var targetLine = documentLines[targetIndex];
+
+                    List<TextLine> alignedBlocks = [];
+                    for (var block in targetLine.textLines) {
+                      double blockLeft = block.boundingBox.left;
+                      double blockRight = block.boundingBox.right;
+
+                      bool overlaps =
+                          max(anchorLeft, blockLeft) <=
+                          min(anchorRight, blockRight);
+                      bool leftAligned = (anchorLeft - blockLeft).abs() < 100;
+
+                      if (overlaps || leftAligned) {
+                        alignedBlocks.add(block);
+                      }
+                    }
+
+                    if (alignedBlocks.isNotEmpty) {
+                      String lineText = alignedBlocks
+                          .map((e) => e.text)
+                          .join(' ');
+                      if (lineText.trim().isNotEmpty) {
+                        combinedLines.add(lineText);
+                      }
+
+                      for (var block in alignedBlocks) {
+                        if (left == null || block.boundingBox.left < left) left = block.boundingBox.left;
+                        if (top == null || block.boundingBox.top < top) top = block.boundingBox.top;
+                        if (right == null || block.boundingBox.right > right) right = block.boundingBox.right;
+                        if (bottom == null || block.boundingBox.bottom > bottom) bottom = block.boundingBox.bottom;
+                      }
+                    }
+                  }
+                }
+
+                if (combinedLines.isNotEmpty) {
+                  matchedText = combinedLines.join('\n');
+                  if (left != null && top != null && right != null && bottom != null) {
+                    matchedRect = Rect.fromLTRB(left, top, right, bottom);
+                  }
+                }
+                break;
+              } else if (instruction.offsetOnLine != null) {
+                int targetIdx = anchorIdx + instruction.offsetOnLine!;
+                if (targetIdx >= 0 && targetIdx < docLine.textLines.length) {
+                  matchedText = docLine.textLines[targetIdx].text;
+                  matchedRect = docLine.textLines[targetIdx].boundingBox;
+                }
+                break;
+              }
+            }
+          }
+        }
+        break;
+
       case MatchStrategy.regex:
         if (instruction.extractRegex != null) {
           for (var line in allLines) {
+            // inspect(line);
+            if(line.text.contains("1452")){
+              inspect(line.elements);
+            }
             if (instruction.extractRegex!.hasMatch(line.text)) {
               matchedText = line.text;
               matchedRect = line.boundingBox;
               break;
+            }
+          } // If regex strategy is used and no specific line matches,
+          // try to find a match across all text blocks.
+          if (matchedText == null) {
+            for (var line in allLines) {
+              // If regex strategy is used and no specific line matches,
+              String compressedLine = line.text.replaceAll(RegExp(r'\s+'), '');
+              if (instruction.extractRegex!.hasMatch(compressedLine)) {
+                matchedText = line.text;
+                matchedRect = line.boundingBox;
+                break;
+              }
             }
           }
         }
@@ -279,8 +524,16 @@ class TextExtractionService {
     }
 
     // Attempt fallback if we still don't have text
-    if ((matchedText == null || matchedText.trim().isEmpty) && instruction.fallback != null) {
-      return _processInstruction(instruction.fallback!, allLines, documentLines, imgW, imgH);
+    if ((matchedText == null || matchedText.trim().isEmpty) &&
+        instruction.fallback != null) {
+      return _processInstruction(
+        instruction.fallback!,
+        allLines,
+        documentLines,
+        imgW,
+        imgH,
+        extractedRects,
+      );
     }
 
     if (matchedText == null) return null;
